@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="es">
+<head>
+<link rel="icon" href="data:,">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vigia</title>
+<style>
+:root{
+  --bg:#0f1115;--panel:#181b22;--panel2:#20242d;--border:#2c313c;--text:#e8eaef;--muted:#9aa3b2;
+  --accent:#4f8cff;--ok:#2fbf71;--warn:#f2b84b;--bad:#ff5d5d;--radius:10px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;align-items:center;gap:16px;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0;z-index:5}
+header h1{font-size:18px;margin:0;letter-spacing:.5px}
+header h1 span{color:var(--accent)}
+nav{display:flex;gap:4px}
+nav button{background:none;border:0;color:var(--muted);padding:8px 12px;border-radius:8px;cursor:pointer;font-size:14px}
+nav button.active{background:var(--panel2);color:var(--text)}
+.badge{background:var(--bad);color:#fff;border-radius:999px;padding:0 6px;font-size:11px;margin-left:4px}
+.spacer{flex:1}
+.muted{color:var(--muted)}
+main{padding:16px;max-width:1400px;margin:0 auto}
+.btn{background:var(--panel2);color:var(--text);border:1px solid var(--border);padding:6px 12px;border-radius:8px;cursor:pointer;font-size:13px}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.danger{color:var(--bad)}
+.btn.ok{color:var(--ok)}
+.btn:disabled{opacity:.5;cursor:default}
+input,select{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px}
+input[type=number]{width:90px}
+label{font-size:12px;color:var(--muted);display:block;margin-bottom:2px}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(420px,1fr))}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.card .head{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border)}
+.card .body{padding:10px 12px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block}
+.dot.running{background:var(--ok);box-shadow:0 0 6px var(--ok)}
+.dot.error{background:var(--bad)}
+.video{aspect-ratio:16/9;background:#000;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.video img{width:100%;height:100%;object-fit:contain}
+.alerts{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+.alert img,.alert video{width:100%;display:block;background:#000}
+.sev-high{color:var(--bad)} .sev-medium{color:var(--warn)} .sev-low{color:var(--muted)}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:12px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+.cfg{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(320px,1fr);gap:16px}
+@media (max-width:900px){.cfg{grid-template-columns:1fr}.grid{grid-template-columns:1fr}}
+.editor{position:relative;background:#000;border-radius:var(--radius);overflow:hidden;user-select:none}
+.editor canvas{display:block;width:100%;cursor:crosshair}
+.hint{font-size:12px;color:var(--muted);margin:6px 0}
+.zone{border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;background:var(--panel2)}
+.zone.sel{border-color:var(--accent)}
+.zone .row input[type=text]{width:140px}
+section h3{margin:16px 0 8px;font-size:14px}
+.rule{border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px}
+.rule .params{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.chips label{display:flex;gap:4px;align-items:center;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:999px;padding:2px 8px;margin:0}
+.toast{position:fixed;right:16px;bottom:16px;background:var(--panel2);border:1px solid var(--border);border-left:4px solid var(--bad);padding:10px 14px;border-radius:8px;max-width:360px;display:none;z-index:10}
+.empty{padding:40px;text-align:center;color:var(--muted)}
+.err{color:var(--bad);font-size:12px;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<header>
+  <h1>Vi<span>gia</span></h1>
+  <nav>
+    <button data-tab="live" class="active">En vivo</button>
+    <button data-tab="alerts">Alertas <span id="alertBadge" class="badge" hidden></span></button>
+    <button data-tab="config">Configuración</button>
+  </nav>
+  <div class="spacer"></div>
+  <span id="modelInfo" class="muted"></span>
+</header>
+
+<main>
+  <!-- EN VIVO -->
+  <div id="tab-live">
+    <div class="row" style="margin-bottom:12px">
+      <button class="btn ok" onclick="startAll()">▶ Iniciar todas</button>
+      <button class="btn danger" onclick="stopAll()">■ Detener todas</button>
+      <span class="hint">Los videos de archivo se reproducen en bucle, como si fueran una cámara.</span>
+    </div>
+    <div id="liveGrid" class="grid"></div>
+  </div>
+
+  <!-- ALERTAS -->
+  <div id="tab-alerts" hidden>
+    <div class="filters">
+      <div><label>Cámara</label><select id="fCam"><option value="">Todas</option></select></div>
+      <div><label>Regla</label><select id="fRule"><option value="">Todas</option></select></div>
+      <div><label>Revisión</label><select id="fReview">
+        <option value="">Todas</option><option value="pending">Pendientes</option>
+        <option value="valid">Válidas</option><option value="false_alarm">Falsas alarmas</option></select></div>
+      <span id="alertStats" class="muted"></span>
+    </div>
+    <div id="alertGrid" class="grid alerts"></div>
+  </div>
+
+  <!-- CONFIGURACIÓN -->
+  <div id="tab-config" hidden>
+    <div class="row" style="margin-bottom:12px">
+      <div><label>Cámara</label><select id="cfgCam"></select></div>
+      <button class="btn" onclick="newCamera()">+ Nueva cámara</button>
+      <div class="spacer"></div>
+      <span id="cfgMsg" class="muted"></span>
+      <button class="btn danger" onclick="deleteCamera()">Eliminar cámara</button>
+      <button class="btn primary" onclick="saveCamera()">Guardar cambios</button>
+    </div>
+    <div class="cfg">
+      <div>
+        <div class="row" style="margin-bottom:10px">
+          <div><label>Id</label><input id="camId" type="text" style="width:120px"></div>
+          <div><label>Nombre</label><input id="camName" type="text" style="width:200px"></div>
+          <div style="flex:1;min-width:220px"><label>Fuente (RTSP, archivo de video o número de webcam)</label><input id="camSource" type="text" style="width:100%"></div>
+          <button class="btn" onclick="reloadFrame()">↻ Cuadro</button>
+        </div>
+        <div class="editor"><canvas id="canvas"></canvas></div>
+        <p class="hint" id="editorHint">Selecciona una zona para mover sus puntos, o crea una nueva.</p>
+        <div id="frameErr" class="err"></div>
+      </div>
+      <div>
+        <section>
+          <div class="row"><h3 style="flex:1">Zonas</h3>
+            <button class="btn" id="drawBtn" onclick="startDrawing()">+ Dibujar zona</button></div>
+          <div id="zoneList"></div>
+        </section>
+        <section>
+          <h3>Reglas</h3>
+          <div id="ruleList"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+</main>
+<div id="toast" class="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const api = async (url, opts = {}) => {
+  const r = await fetch(url, {headers: {'Content-Type': 'application/json'}, ...opts});
+  if (!r.ok) {
+    let msg = r.statusText;
+    try { const j = await r.json(); msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail); } catch {}
+    throw new Error(msg);
+  }
+  return r.json();
+};
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const KIND_COLOR = {loitering:'#f2b84b', door:'#d65cff', window:'#4fb3ff', restricted:'#ff5d5d'};
+
+let INFO = null, CAMERAS = [], tab = 'live', lastAlertId = null, unseen = 0;
+
+// ---------------- pestañas ----------------
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+function showTab(t) {
+  tab = t;
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+  for (const x of ['live', 'alerts', 'config']) $('#tab-' + x).hidden = x !== t;
+  if (t === 'alerts') { unseen = 0; updateBadge(); loadAlerts(); }
+  if (t === 'config') loadConfigTab();
+  if (t === 'live') renderLive(true);
+}
+
+// ---------------- en vivo ----------------
+async function loadCameras() {
+  CAMERAS = await api('/api/cameras');
+  if (tab === 'live') renderLive(false);
+}
+function renderLive(force) {
+  const grid = $('#liveGrid');
+  if (!CAMERAS.length) { grid.innerHTML = '<div class="empty">No hay cámaras. Agrégalas en Configuración.</div>'; return; }
+  for (const c of CAMERAS) {
+    let card = document.getElementById('live-' + c.id);
+    if (!card) {
+      card = document.createElement('div');
+      card.className = 'card'; card.id = 'live-' + c.id;
+      card.innerHTML = `<div class="head"><span class="dot"></span><b class="nm"></b><span class="muted st"></span>
+        <div class="spacer"></div><button class="btn tg"></button></div>
+        <div class="video"><span class="ph">Detenida</span></div><div class="body muted src"></div>`;
+      grid.appendChild(card);
+    }
+    const s = c.status, running = s.state === 'running' || s.state === 'starting';
+    card.querySelector('.dot').className = 'dot ' + (running ? 'running' : s.state);
+    card.querySelector('.nm').textContent = c.name || c.id;
+    card.querySelector('.st').textContent = s.state === 'starting' ? 'iniciando (cargando modelo / conectando)…' : running ? `${s.fps} fps · ${s.events} alertas` : ({stopped:'detenida', finished:'terminó', error:'error'}[s.state] || s.state);
+    card.querySelector('.src').innerHTML = esc(c.source) + (s.error ? `<div class="err">${esc(s.error)}</div>` : '');
+    const btn = card.querySelector('.tg');
+    btn.textContent = running ? '■ Detener' : '▶ Iniciar';
+    btn.className = 'btn tg ' + (running ? 'danger' : 'ok');
+    btn.onclick = () => toggleCam(c.id, running);
+    const video = card.querySelector('.video');
+    const img = video.querySelector('img');
+    if (running && (!img || force)) {
+      video.innerHTML = `<img src="/api/cameras/${encodeURIComponent(c.id)}/stream.mjpg?t=${Date.now()}" alt="" onerror="this.remove()">`;
+    } else if (!running && img) {
+      video.innerHTML = '<span class="ph">Detenida</span>';
+    }
+  }
+  for (const el of [...grid.children]) if (el.id && !CAMERAS.find(c => 'live-' + c.id === el.id)) el.remove();
+  const empty = grid.querySelector('.empty'); if (empty && CAMERAS.length) empty.remove();
+}
+async function toggleCam(id, running) {
+  try { await api(`/api/cameras/${encodeURIComponent(id)}/${running ? 'stop' : 'start'}`, {method: 'POST'}); }
+  catch (e) { toast('No se pudo cambiar la cámara: ' + e.message); }
+  await loadCameras(); renderLive(true);
+}
+async function startAll() { for (const c of CAMERAS) if (!['running', 'starting'].includes(c.status.state)) await api(`/api/cameras/${encodeURIComponent(c.id)}/start`, {method:'POST'}); await loadCameras(); renderLive(true); }
+async function stopAll() { for (const c of CAMERAS) if (['running', 'starting'].includes(c.status.state)) await api(`/api/cameras/${encodeURIComponent(c.id)}/stop`, {method:'POST'}); await loadCameras(); renderLive(true); }
+
+// ---------------- alertas ----------------
+['#fCam', '#fRule', '#fReview'].forEach(s => $(s).onchange = loadAlerts);
+async function loadAlerts() {
+  const params = new URLSearchParams({limit: 120});
+  if ($('#fCam').value) params.set('camera_id', $('#fCam').value);
+  if ($('#fRule').value) params.set('rule', $('#fRule').value);
+  let evs = await api('/events?' + params);
+  const rv = $('#fReview').value;
+  if (rv) evs = evs.filter(e => rv === 'pending' ? !e.review : e.review === rv);
+  const valid = evs.filter(e => e.review === 'valid').length, fa = evs.filter(e => e.review === 'false_alarm').length;
+  $('#alertStats').textContent = `${evs.length} alertas · ${valid} válidas · ${fa} falsas alarmas`;
+  $('#alertGrid').innerHTML = evs.map(e => {
+    const clip = e.clip_path ? (e.clip_path.endsWith('.webm') || /avc1/.test(e.clip_path)
+      ? `<video src="/events/${e.id}/clip" controls preload="none" poster="/events/${e.id}/snapshot"></video>`
+      : `<a class="muted" href="/events/${e.id}/clip" download>Descargar clip</a>`) : '';
+    const media = e.clip_path && e.clip_path.endsWith('.webm') ? clip
+      : `${e.snapshot_path ? `<img src="/events/${e.id}/snapshot" loading="lazy" alt="">` : ''}<div class="body" style="padding-bottom:0">${clip}</div>`;
+    const rule = INFO?.rules[e.rule]?.label || e.rule;
+    return `<div class="card alert">${media}
+      <div class="body">
+        <div class="sev-${e.severity}"><b>${esc(rule)}</b> · ${esc(e.camera_id)}${e.zone ? ' · ' + esc(e.zone) : ''}</div>
+        <div>${esc(e.message)}</div>
+        <div class="muted" style="font-size:12px">${esc(e.occurred_at.replace('T', ' '))} · ${e.review === 'valid' ? '✔ válida' : e.review === 'false_alarm' ? '✖ falsa alarma' : 'pendiente de revisión'}</div>
+        <div class="row" style="margin-top:6px">
+          <button class="btn ok" onclick="review(${e.id},'valid')">Válida</button>
+          <button class="btn danger" onclick="review(${e.id},'false_alarm')">Falsa alarma</button>
+          ${e.review ? `<button class="btn" onclick="review(${e.id},null)">Deshacer</button>` : ''}
+        </div>
+      </div></div>`;
+  }).join('') || '<div class="empty">Sin alertas con estos filtros.</div>';
+}
+async function review(id, r) { await api(`/events/${id}/review`, {method: 'POST', body: JSON.stringify({review: r})}); loadAlerts(); }
+async function pollAlerts() {
+  const evs = await api('/events?limit=5');
+  if (!evs.length) return;
+  if (lastAlertId !== null) {
+    const fresh = evs.filter(e => e.id > lastAlertId);
+    if (fresh.length) {
+      toast(`🚨 ${fresh[0].camera_id}: ${fresh[0].message}`);
+      if (tab === 'alerts') loadAlerts(); else { unseen += fresh.length; updateBadge(); }
+    }
+  }
+  lastAlertId = Math.max(lastAlertId ?? 0, ...evs.map(e => e.id));
+}
+function updateBadge() { const b = $('#alertBadge'); b.hidden = !unseen; b.textContent = unseen; }
+let toastTimer;
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.style.display = 'none', 6000); }
+
+// ---------------- configuración ----------------
+let edit = null;          // copia de la cámara que se edita
+let img = new Image(), imgOk = false;
+let selZone = -1, drawing = null, drag = null;
+const canvas = $('#canvas'), ctx = canvas.getContext('2d');
+
+async function loadConfigTab(selectId) {
+  await loadCameras();
+  const sel = $('#cfgCam');
+  const keep = selectId || sel.value || CAMERAS[0]?.id;
+  sel.innerHTML = CAMERAS.map(c => `<option value="${esc(c.id)}">${esc(c.name || c.id)}</option>`).join('');
+  if (keep) { sel.value = keep; selectCamera(keep); }
+}
+$('#cfgCam').onchange = e => selectCamera(e.target.value);
+function selectCamera(id) {
+  const c = CAMERAS.find(c => c.id === id);
+  if (!c) return;
+  edit = JSON.parse(JSON.stringify({id: c.id, name: c.name, source: c.source, zones: c.zones || [], rules: c.rules || {}}));
+  edit._new = false;
+  fillForm(); reloadFrame();
+}
+function newCamera() {
+  const n = CAMERAS.length + 1;
+  edit = {id: 'cam' + n, name: 'Cámara ' + n, source: '', zones: [], rules: {}, _new: true};
+  fillForm(); imgOk = false; draw();
+  $('#frameErr').textContent = 'Escribe la fuente y guarda; luego pulsa "↻ Cuadro" para dibujar zonas.';
+}
+function fillForm() {
+  $('#camId').value = edit.id; $('#camId').disabled = !edit._new;
+  $('#camName').value = edit.name; $('#camSource').value = edit.source;
+  selZone = -1; drawing = null; $('#cfgMsg').textContent = '';
+  renderZones(); renderRules();
+}
+function reloadFrame() {
+  if (!edit || edit._new) return;
+  $('#frameErr').textContent = 'Cargando cuadro...';
+  img = new Image();
+  img.onload = () => { imgOk = true; $('#frameErr').textContent = ''; draw(); };
+  img.onerror = async () => {
+    imgOk = false; draw();
+    try { await api(`/api/cameras/${encodeURIComponent(edit.id)}/frame.jpg?raw=true`); }
+    catch (e) { $('#frameErr').textContent = 'No se pudo leer la fuente: ' + e.message; }
+  };
+  img.src = `/api/cameras/${encodeURIComponent(edit.id)}/frame.jpg?raw=true&t=${Date.now()}`;
+}
+
+// --- dibujo del lienzo
+function draw() {
+  const w = imgOk ? img.naturalWidth : 1280, h = imgOk ? img.naturalHeight : 720;
+  canvas.width = w; canvas.height = h;
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
+  if (imgOk) ctx.drawImage(img, 0, 0);
+  if (!edit) return;
+  const lw = Math.max(2, w / 400);
+  edit.zones.forEach((z, i) => drawPoly(z.polygon, KIND_COLOR[z.kind] || '#ccc', i === selZone, z.name, lw));
+  if (drawing) drawPoly(drawing, '#ffffff', true, 'nueva', lw, true);
+}
+function drawPoly(pts, color, selected, name, lw, open) {
+  if (!pts.length) return;
+  const W = canvas.width, H = canvas.height;
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => i ? ctx.lineTo(x * W, y * H) : ctx.moveTo(x * W, y * H));
+  if (!open) ctx.closePath();
+  ctx.lineWidth = selected ? lw * 1.8 : lw; ctx.strokeStyle = color; ctx.stroke();
+  if (!open) { ctx.globalAlpha = selected ? .25 : .12; ctx.fillStyle = color; ctx.fill(); ctx.globalAlpha = 1; }
+  if (selected) pts.forEach(([x, y]) => { ctx.beginPath(); ctx.arc(x * W, y * H, lw * 3, 0, 7); ctx.fillStyle = color; ctx.fill(); });
+  ctx.font = `bold ${Math.max(14, W / 60)}px system-ui`; ctx.fillStyle = color;
+  ctx.fillText(name, pts[0][0] * W + 6, pts[0][1] * H + Math.max(16, W / 50));
+}
+function canvasPoint(ev) {
+  const r = canvas.getBoundingClientRect();
+  return [Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height))];
+}
+function round3(p) { return [Math.round(p[0] * 1000) / 1000, Math.round(p[1] * 1000) / 1000]; }
+
+canvas.addEventListener('mousedown', ev => {
+  if (!edit) return;
+  const p = canvasPoint(ev);
+  if (drawing) { drawing.push(round3(p)); draw(); return; }
+  // ¿Se tocó un vértice de la zona seleccionada?
+  const r = canvas.getBoundingClientRect(), tol = 12 / r.width;
+  if (selZone >= 0) {
+    const vi = edit.zones[selZone].polygon.findIndex(([x, y]) => Math.hypot(x - p[0], (y - p[1]) * r.height / r.width) < tol);
+    if (vi >= 0) { drag = {zone: selZone, vi}; return; }
+  }
+  // Si no, seleccionar la zona bajo el cursor.
+  const hit = edit.zones.findIndex(z => pointInPoly(p, z.polygon));
+  selZone = hit; renderZones(); draw();
+});
+canvas.addEventListener('mousemove', ev => {
+  if (!drag) return;
+  edit.zones[drag.zone].polygon[drag.vi] = round3(canvasPoint(ev)); draw();
+});
+window.addEventListener('mouseup', () => { if (drag) { drag = null; markDirty(); } });
+canvas.addEventListener('dblclick', () => { if (drawing) finishDrawing(); });
+function pointInPoly([x, y], poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+function startDrawing() {
+  if (!edit) return;
+  if (drawing) return finishDrawing();
+  drawing = []; selZone = -1;
+  $('#drawBtn').textContent = '✔ Terminar zona';
+  $('#editorHint').textContent = 'Haz clic en cada esquina de la zona. Doble clic o "Terminar zona" para cerrarla (mínimo 3 puntos). Esc para cancelar.';
+  draw();
+}
+function finishDrawing() {
+  if (drawing.length >= 3) {
+    let n = edit.zones.length + 1;
+    while (edit.zones.some(z => z.name === 'zona' + n)) n++;
+    edit.zones.push({name: 'zona' + n, kind: 'loitering', polygon: drawing});
+    selZone = edit.zones.length - 1; markDirty();
+  }
+  drawing = null;
+  $('#drawBtn').textContent = '+ Dibujar zona';
+  $('#editorHint').textContent = 'Selecciona una zona para mover sus puntos, o crea una nueva.';
+  renderZones(); renderRules(); draw();
+}
+window.addEventListener('keydown', e => { if (e.key === 'Escape' && drawing) { drawing = null; finishDrawing(); } });
+
+// --- lista de zonas
+function renderZones() {
+  if (!edit) return;
+  const kinds = INFO?.zone_kinds || {};
+  $('#zoneList').innerHTML = edit.zones.map((z, i) => `
+    <div class="zone ${i === selZone ? 'sel' : ''}" onclick="selZone=${i};renderZones();draw()">
+      <div class="row">
+        <div><label>Nombre</label><input type="text" value="${esc(z.name)}" onchange="renameZone(${i},this.value)"></div>
+        <div><label>Tipo</label><select onchange="edit.zones[${i}].kind=this.value;markDirty();renderRules();draw()">
+          ${Object.entries(kinds).map(([k, l]) => `<option value="${k}" ${z.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        <div><label>Horario (vacío = siempre)</label><input type="text" placeholder="22:00-06:00" style="width:110px"
+          value="${esc((z.schedules || []).join(', '))}" onchange="setSchedule(${i},this.value)"></div>
+        <button class="btn danger" onclick="event.stopPropagation();removeZone(${i})">✕</button>
+      </div>
+    </div>`).join('') || '<p class="hint">Sin zonas. Pulsa "Dibujar zona".</p>';
+}
+function renameZone(i, name) {
+  name = name.trim();
+  if (!name) return renderZones();
+  const old = edit.zones[i].name;
+  edit.zones[i].name = name;
+  for (const r of Object.values(edit.rules)) if (r && Array.isArray(r.zones)) r.zones = r.zones.map(z => z === old ? name : z);
+  markDirty(); renderRules(); draw();
+}
+function setSchedule(i, v) {
+  const list = v.split(',').map(s => s.trim()).filter(Boolean);
+  if (list.length) edit.zones[i].schedules = list; else delete edit.zones[i].schedules;
+  markDirty();
+}
+function removeZone(i) {
+  const name = edit.zones[i].name;
+  edit.zones.splice(i, 1);
+  for (const r of Object.values(edit.rules)) if (r && Array.isArray(r.zones)) r.zones = r.zones.filter(z => z !== name);
+  selZone = -1; markDirty(); renderZones(); renderRules(); draw();
+}
+
+// --- reglas
+function renderRules() {
+  if (!edit || !INFO) return;
+  $('#ruleList').innerHTML = Object.entries(INFO.rules).map(([name, info]) => {
+    const r = edit.rules[name], on = !!r && r.enabled !== false;
+    const eligible = edit.zones.filter(z => !info.zone_kinds.length || info.zone_kinds.includes(z.kind));
+    const zonesHtml = eligible.length || info.zone_kinds.length ? `<div class="chips">${eligible.map(z => `
+      <label><input type="checkbox" ${on && (r.zones || []).includes(z.name) ? 'checked' : ''} ${on ? '' : 'disabled'}
+        onchange="toggleRuleZone('${name}',${edit.zones.indexOf(z)},this.checked)">${esc(z.name)}</label>`).join('')
+      || `<span class="hint">Dibuja una zona de tipo ${info.zone_kinds.map(k => INFO.zone_kinds[k]).join(' / ')}.</span>`}</div>` : '';
+    const params = Object.entries(info.params).map(([k, p]) => `
+      <div title="${esc(p.help)}"><label>${esc(p.help)}</label>
+      <input type="number" step="any" ${on ? '' : 'disabled'} value="${on && r[k] !== undefined ? r[k] : p.default}"
+        onchange="setParam('${name}','${k}',this.value)"></div>`).join('');
+    const note = name === 'abandoned_object' ? '<div class="hint">Sin zonas marcadas vigila toda la imagen.</div>' : '';
+    return `<div class="rule"><label style="display:flex;gap:6px;align-items:center;color:var(--text);font-size:14px">
+      <input type="checkbox" ${on ? 'checked' : ''} onchange="toggleRule('${name}',this.checked)"><b>${esc(info.label)}</b></label>
+      ${zonesHtml}${note}<div class="params">${params}</div></div>`;
+  }).join('');
+}
+function toggleRule(name, on) {
+  if (on) edit.rules[name] = {...(edit.rules[name] || {}), enabled: undefined};
+  else delete edit.rules[name];
+  if (on && INFO.rules[name].zone_kinds.length && !edit.rules[name].zones) edit.rules[name].zones = [];
+  markDirty(); renderRules();
+}
+function toggleRuleZone(rule, zi, on) {
+  const zone = edit.zones[zi].name, r = edit.rules[rule]; r.zones = (r.zones || []).filter(z => z !== zone);
+  if (on) r.zones.push(zone);
+  markDirty();
+}
+function setParam(rule, k, v) {
+  const num = Number(v);
+  if (v === '' || Number.isNaN(num)) delete edit.rules[rule][k]; else edit.rules[rule][k] = num;
+  markDirty();
+}
+function markDirty() { $('#cfgMsg').textContent = 'Cambios sin guardar'; }
+
+async function saveCamera() {
+  if (!edit) return;
+  if (drawing) finishDrawing();
+  edit.id = $('#camId').value.trim(); edit.name = $('#camName').value.trim(); edit.source = $('#camSource').value.trim();
+  const rules = {};
+  for (const [k, r] of Object.entries(edit.rules)) {
+    const clean = {...r}; delete clean.enabled;
+    if (INFO.rules[k]?.zone_kinds.length === 0 && Array.isArray(clean.zones) && !clean.zones.length) delete clean.zones;
+    rules[k] = clean;
+  }
+  const body = {id: edit.id, name: edit.name, source: edit.source, zones: edit.zones, rules};
+  try {
+    const saved = await api(`/api/cameras/${encodeURIComponent(edit.id)}`, {method: 'PUT', body: JSON.stringify(body)});
+    const wasNew = edit._new;
+    await loadConfigTab(saved.id);
+    $('#cfgMsg').textContent = wasNew ? '✔ Cámara creada' : '✔ Guardado' + (['running', 'starting'].includes(saved.status.state) ? ' (la cámara se reinició con los cambios)' : '');
+  } catch (e) { $('#cfgMsg').innerHTML = `<span class="err">No se guardó: ${esc(e.message)}</span>`; }
+}
+async function deleteCamera() {
+  if (!edit || edit._new) return loadConfigTab();
+  if (!confirm(`¿Eliminar la cámara "${edit.name || edit.id}"? Sus alertas guardadas se conservan.`)) return;
+  try { await api(`/api/cameras/${encodeURIComponent(edit.id)}`, {method: 'DELETE'}); $('#cfgCam').value = ''; await loadConfigTab(); }
+  catch (e) { $('#cfgMsg').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+
+// ---------------- inicio ----------------
+(async () => {
+  try {
+    INFO = await api('/api/info');
+    $('#modelInfo').textContent = `Modelo: ${INFO.model.backend} · ${INFO.model.weights} · ${INFO.analysis_fps} fps`;
+    $('#fRule').innerHTML += Object.entries(INFO.rules).map(([k, r]) => `<option value="${k}">${r.label}</option>`).join('');
+  } catch { $('#modelInfo').textContent = 'Modo sólo alertas (sin configuración)'; document.querySelector('[data-tab=config]').hidden = true; }
+  try { await loadCameras(); } catch { CAMERAS = []; }
+  $('#fCam').innerHTML += CAMERAS.map(c => `<option value="${esc(c.id)}">${esc(c.name || c.id)}</option>`).join('');
+  if (!INFO) showTab('alerts');
+  await pollAlerts();
+  setInterval(() => { if (INFO) loadCameras().catch(() => {}); pollAlerts().catch(() => {}); }, 3000);
+})();
+</script>
+</body>
+</html>

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from datetime import datetime
 
 import cv2
@@ -39,6 +40,8 @@ class CameraPipeline:
         start_time: datetime | None = None,
         loop: bool = False,
         save_video: str | None = None,
+        realtime: bool = False,
+        on_frame: Callable[[np.ndarray], None] | None = None,
     ):
         self.app = app
         self.cam = cam
@@ -46,13 +49,16 @@ class CameraPipeline:
         self.store = store
         self.notifiers = notifiers or []
         self.lock = detector_lock or threading.Lock()
-        self.source = VideoSource(cam.source, app.analysis_fps, start_time=start_time, loop=loop)
+        self.source = VideoSource(cam.source, app.analysis_fps, start_time=start_time, loop=loop, realtime=realtime)
         self.tracker = Tracker(app.analysis_fps)
         self.rules = cam.build_rules()
         self.clips = ClipRecorder(store, app.analysis_fps, app.clip_pre_seconds, app.clip_post_seconds)
         self.save_video = save_video
         self.events: list[Event] = []
         self.error: BaseException | None = None
+        self.on_frame = on_frame  # recibe cada cuadro anotado (para la vista en vivo)
+        self.stop_event = threading.Event()
+        self.frames_processed = 0
         self._box = sv.BoxAnnotator(thickness=2)
         self._label = sv.LabelAnnotator(text_scale=0.5, text_padding=3)
 
@@ -68,7 +74,7 @@ class CameraPipeline:
         writer = None
         try:
             for frame in self.source.frames():
-                if max_seconds is not None and frame.t > max_seconds:
+                if self.stop_event.is_set() or (max_seconds is not None and frame.t > max_seconds):
                     break
                 img = frame.image
                 h, w = img.shape[:2]
@@ -85,6 +91,9 @@ class CameraPipeline:
                 for ev in new_events:
                     self._emit(ev, img)
                 self.clips.push(annotated, frame.t)
+                self.frames_processed += 1
+                if self.on_frame:
+                    self.on_frame(annotated)
 
                 if self.save_video:
                     if writer is None:
