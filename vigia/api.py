@@ -1,12 +1,19 @@
-"""API HTTP mínima para consultar y revisar eventos (base del panel web)."""
+"""API HTTP e interfaz web de Vigia.
+
+- Sin archivo de configuración: sólo eventos (consulta y revisión).
+- Con archivo de configuración: además cámaras, zonas, reglas, inicio/parada
+  del análisis y video en vivo. Es lo que usa la interfaz (``vigia ui``).
+"""
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from importlib import resources
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, Response
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from pydantic import BaseModel, Field
 
 from vigia.events import EventStore
 
@@ -15,9 +22,39 @@ class Review(BaseModel):
     review: str | None  # valid | false_alarm | null
 
 
-def create_app(data_dir: str) -> FastAPI:
+class ZoneIn(BaseModel):
+    name: str = Field(min_length=1)
+    kind: str = "restricted"
+    polygon: list[tuple[float, float]]
+    schedules: list[str] = []
+    params: dict = {}
+
+
+class CameraIn(BaseModel):
+    id: str = Field(min_length=1, pattern=r"^[A-Za-z0-9_-]+$")
+    name: str = ""
+    source: str = Field(min_length=1)
+    zones: list[ZoneIn] | None = None
+    rules: dict[str, dict] | None = None
+
+
+def _index_html() -> str:
+    return resources.files("vigia").joinpath("web/index.html").read_text(encoding="utf-8")
+
+
+def create_app(data_dir: str, config_path: str | None = None, notifiers: list | None = None, preload_model: bool = False) -> FastAPI:
     store = EventStore(data_dir)
-    app = FastAPI(title="Vigia", description="Eventos de riesgo detectados en cámaras")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        yield
+        runner = getattr(app.state, "runner", None)
+        if runner is not None:
+            runner.stop_all()
+
+    app = FastAPI(title="Vigia", description="Detección de riesgos en cámaras de seguridad", lifespan=lifespan)
+
+    # ---------------- eventos ----------------
 
     @app.get("/events")
     def list_events(limit: int = 100, camera_id: str | None = None, rule: str | None = None):
@@ -56,40 +93,134 @@ def create_app(data_dir: str) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     def index():
-        return _INDEX_HTML
+        return _index_html()
+
+    if config_path is None:
+        return app
+
+    # ---------------- cámaras (requiere configuración) ----------------
+
+    from vigia.config_store import ConfigError, ConfigStore
+    from vigia.ingest import VideoSource
+    from vigia.rules import RULE_INFO
+    from vigia.runner import CameraRunner
+
+    config = ConfigStore(config_path)
+    runner = CameraRunner(config, store, notifiers)
+    if preload_model:
+        runner.preload_model()
+    app.state.runner = runner
+    app.state.config = config
+
+    def _camera_out(raw: dict) -> dict:
+        cam_id = str(raw["id"])
+        return {
+            "id": cam_id,
+            "name": raw.get("name", ""),
+            "source": raw.get("source", ""),
+            "zones": raw.get("zones", []),
+            "rules": raw.get("rules", {}),
+            "status": runner.status(cam_id),
+        }
+
+    def _raw_or_404(cam_id: str) -> dict:
+        try:
+            return config.camera_raw(cam_id)
+        except KeyError:
+            raise HTTPException(404, f"No existe la cámara {cam_id}") from None
+
+    @app.get("/api/info")
+    def info():
+        m = config.app.model
+        return {
+            "config_path": str(config.path),
+            "model": {"backend": m.backend, "weights": m.weights, "classes": m.classes},
+            "analysis_fps": config.app.analysis_fps,
+            "rules": {
+                name: {
+                    "label": i["label"],
+                    "zone_kinds": i["zone_kinds"],
+                    "params": {k: {"default": d, "help": h} for k, (d, h) in i["params"].items()},
+                }
+                for name, i in RULE_INFO.items()
+            },
+            "zone_kinds": {
+                "loitering": "Merodeo",
+                "door": "Puerta",
+                "window": "Ventana",
+                "restricted": "Zona restringida",
+            },
+        }
+
+    @app.get("/api/cameras")
+    def cameras():
+        return [_camera_out(c) for c in config.raw.get("cameras", [])]
+
+    @app.put("/api/cameras/{cam_id}")
+    def save_camera(cam_id: str, body: CameraIn):
+        if body.id != cam_id:
+            raise HTTPException(422, "El id del cuerpo no coincide con la URL")
+        data = body.model_dump()
+        if body.zones is not None:
+            data["zones"] = [
+                {k: v for k, v in z.model_dump().items() if v not in ([], {}, None)} | {"polygon": [list(p) for p in z.polygon]}
+                for z in body.zones
+            ]
+        try:
+            config.upsert_camera(data)
+        except ConfigError as e:
+            raise HTTPException(422, str(e)) from e
+        runner.restart_if_running(cam_id)
+        return _camera_out(config.camera_raw(cam_id))
+
+    @app.delete("/api/cameras/{cam_id}")
+    def delete_camera(cam_id: str):
+        _raw_or_404(cam_id)
+        runner.stop(cam_id)
+        try:
+            config.delete_camera(cam_id)
+        except ConfigError as e:
+            raise HTTPException(422, str(e)) from e
+        return {"ok": True}
+
+    @app.post("/api/cameras/{cam_id}/start")
+    def start(cam_id: str):
+        _raw_or_404(cam_id)
+        runner.start(cam_id)
+        return runner.status(cam_id)
+
+    @app.post("/api/cameras/{cam_id}/stop")
+    def stop(cam_id: str):
+        _raw_or_404(cam_id)
+        runner.stop(cam_id)
+        return runner.status(cam_id)
+
+    @app.get("/api/cameras/{cam_id}/frame.jpg")
+    def frame(cam_id: str, raw: bool = False):
+        """Un cuadro de la cámara. ``raw=true`` lo toma directo de la fuente, sin
+        dibujos (para el editor de zonas)."""
+        import cv2
+
+        cam = _raw_or_404(cam_id)
+        if not raw:
+            jpeg = runner.latest_jpeg(cam_id)
+            if jpeg:
+                return Response(jpeg, media_type="image/jpeg")
+        try:
+            first = next(VideoSource(str(cam["source"]), config.app.analysis_fps).frames())
+        except (StopIteration, FileNotFoundError, OSError) as e:
+            raise HTTPException(502, f"No se pudo leer la fuente: {e}") from e
+        ok, buf = cv2.imencode(".jpg", first.image)
+        return Response(buf.tobytes(), media_type="image/jpeg")
+
+    @app.get("/api/cameras/{cam_id}/stream.mjpg")
+    def stream(cam_id: str):
+        _raw_or_404(cam_id)
+
+        def gen():
+            for jpeg in runner.frames(cam_id):
+                yield b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " + str(len(jpeg)).encode() + b"\r\n\r\n" + jpeg + b"\r\n"
+
+        return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=frame")
 
     return app
-
-
-# Bandeja de alertas mínima; el panel completo (Next.js) la reemplaza más adelante.
-_INDEX_HTML = """<!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Vigia - Alertas</title>
-<style>
-body{font-family:system-ui,sans-serif;margin:0;padding:16px;background:#111;color:#eee}
-h1{font-size:20px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
-.card{background:#1d1d1d;border-radius:8px;overflow:hidden}.card img{width:100%;display:block}
-.body{padding:10px;font-size:14px}.high{color:#ff6b6b}.medium{color:#ffd166}
-button{margin-right:6px;padding:4px 8px;border-radius:4px;border:0;cursor:pointer}
-.rev{font-size:12px;color:#aaa}
-</style></head><body>
-<h1>Alertas recientes</h1><div id="g" class="grid"></div>
-<script>
-async function load(){
-  const evs = await (await fetch('events?limit=60')).json();
-  document.getElementById('g').innerHTML = evs.map(e => `
-    <div class="card">
-      ${e.snapshot_path ? `<img src="events/${e.id}/snapshot" loading="lazy">` : ''}
-      <div class="body">
-        <div class="${e.severity}"><b>${e.rule}</b> · ${e.camera_id}${e.zone ? ' · ' + e.zone : ''}</div>
-        <div>${e.message}</div><div class="rev">${e.occurred_at} · revisión: ${e.review ?? 'pendiente'}</div>
-        ${e.clip_path ? `<a href="events/${e.id}/clip" style="color:#8ecae6">Ver clip</a><br>` : ''}
-        <button onclick="rev(${e.id},'valid')">Válida</button><button onclick="rev(${e.id},'false_alarm')">Falsa alarma</button>
-      </div></div>`).join('') || '<p>Sin alertas todavía.</p>';
-}
-async function rev(id, r){
-  await fetch(`events/${id}/review`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({review:r})});
-  load();
-}
-load(); setInterval(load, 5000);
-</script></body></html>"""

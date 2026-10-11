@@ -31,6 +31,9 @@ vigia = "vigia.cli:main"
 [tool.setuptools.packages.find]
 include = ["vigia*"]
 
+[tool.setuptools.package-data]
+vigia = ["web/*"]
+
 [tool.ruff]
 line-length = 140
 target-version = "py310"

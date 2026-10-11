@@ -39,11 +39,19 @@ class VideoSource:
       Si la cámara se cae, reconecta con espera creciente.
     """
 
-    def __init__(self, source: str, analysis_fps: float, start_time: datetime | None = None, loop: bool = False):
+    def __init__(
+        self,
+        source: str,
+        analysis_fps: float,
+        start_time: datetime | None = None,
+        loop: bool = False,
+        realtime: bool = False,
+    ):
         self.source = source
         self.analysis_fps = analysis_fps
         self.start_time = start_time
         self.loop = loop
+        self.realtime = realtime  # archivos: reproducir a velocidad real (para verlo en vivo)
 
     def frames(self) -> Iterator[Frame]:
         if is_live(self.source):
@@ -54,6 +62,7 @@ class VideoSource:
     def _file(self) -> Iterator[Frame]:
         start = self.start_time or datetime.now()
         offset = 0.0
+        wall0 = time.monotonic()
         while True:
             cap = cv2.VideoCapture(self.source)
             if not cap.isOpened():
@@ -70,6 +79,8 @@ class VideoSource:
                     ok, img = cap.retrieve()
                     if ok:
                         last_t = offset + idx / src_fps
+                        if self.realtime:
+                            time.sleep(max(0.0, last_t - (time.monotonic() - wall0)))
                         yield Frame(img, last_t, start + timedelta(seconds=last_t))
                 idx += 1
             cap.release()

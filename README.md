@@ -42,6 +42,22 @@ pytest                             # pruebas de las reglas, sin modelos ni video
 
 Los pesos del modelo (`yolo26n.pt`) se descargan solos la primera vez.
 
+## Interfaz gráfica
+
+```bash
+vigia ui -c configs/ejemplo_video.yaml     # abre http://127.0.0.1:8000 en el navegador
+```
+
+- **En vivo**: inicia o detiene cada cámara y mira el video con las detecciones, los IDs y las zonas dibujadas. Los archivos de video se reproducen en bucle a velocidad real, como si fueran una cámara. La primera vez tarda unos segundos mientras carga el modelo.
+- **Alertas**: la bandeja con foto y clip de cada evento. Márcalas como válidas o falsa alarma; filtra por cámara, regla o revisión. Avisa con un globo cuando llega una alerta nueva.
+- **Configuración**: agrega, edita o borra cámaras. Dibuja las zonas sobre un cuadro de la cámara (clic para cada esquina, doble clic o "Terminar" para cerrar, Esc para cancelar; selecciona una zona y arrastra sus esquinas para moverlas). Activa reglas, elige sus zonas y ajusta los umbrales.
+
+Al guardar, los cambios se validan antes de escribir el YAML (queda una copia `.bak`) y la cámara se reinicia sola si estaba corriendo. Los comentarios del YAML se pierden al guardar desde la interfaz.
+
+La interfaz usa la hora real para los horarios de las zonas. Si una zona tiene `22:00-06:00`, de día no alerta; quita el horario para probarla.
+
+`vigia ui --host 0.0.0.0` la abre a otros equipos de tu red. No tiene usuarios ni contraseña todavía, así que no la expongas a internet.
+
 ## Probarlo sin cámaras
 
 **Opción 1: el ejemplo listo con un video público.**
@@ -89,11 +105,9 @@ zones:
     params: {confirm_seconds: 2}  # opcional; umbrales propios de la zona
 ```
 
-## Bandeja de alertas y API
+## API
 
-```bash
-vigia api -c configs/demo.yaml     # http://localhost:8000
-```
+`vigia api -c configs/demo.yaml` levanta lo mismo que `vigia ui` sin abrir el navegador (http://localhost:8000; documentación en `/docs`).
 
 - `GET /events`: últimas alertas (filtros `camera_id`, `rule`, `limit`).
 - `GET /events/{id}/snapshot` y `/clip`: foto y video del evento.
@@ -134,7 +148,10 @@ vigia/
   events.py         SQLite, fotos y clips
   notify/           Telegram
   pipeline.py       bucle de análisis por cámara
-  api.py            API y bandeja web
-  cli.py            comandos run, snapshot y api
+  api.py            API HTTP
+  runner.py         arranca y detiene cámaras en segundo plano
+  config_store.py   guarda la configuración validada
+  web/index.html    interfaz gráfica
+  cli.py            comandos run, snapshot, ui y api
 tests/              pruebas de reglas, configuración y API
 ```

@@ -110,6 +110,22 @@ def draw_event(frame: np.ndarray, ev: Event) -> np.ndarray:
     return img
 
 
+# Códecs en orden de preferencia: los dos primeros se reproducen en el navegador;
+# mp4v siempre está disponible en OpenCV pero hay que descargarlo para verlo.
+_CODECS = (("VP80", ".webm"), ("avc1", ".mp4"), ("mp4v", ".mp4"))
+
+
+def open_video_writer(base: Path, fps: float, size: tuple[int, int]) -> tuple[cv2.VideoWriter, Path]:
+    """Abre un VideoWriter con el primer códec que funcione. ``base`` va sin extensión."""
+    for fourcc, ext in _CODECS:
+        path = base.with_suffix(ext)
+        writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*fourcc), fps, size)
+        if writer.isOpened():
+            return writer, path
+        writer.release()
+    raise RuntimeError("OpenCV no pudo abrir ningún códec de video")
+
+
 @dataclass
 class _PendingClip:
     event_id: int
@@ -141,7 +157,7 @@ class ClipRecorder:
         self.pending = still
 
     def start(self, ev: Event) -> None:
-        name = f"{ev.id:06d}_{ev.camera_id}_{ev.rule}.mp4"
+        name = f"{ev.id:06d}_{ev.camera_id}_{ev.rule}"
         self.pending.append(_PendingClip(ev.id, self.store.dir / "clips" / name, ev.t + self.post, list(self.buffer)))
 
     def flush(self) -> None:
@@ -153,12 +169,12 @@ class ClipRecorder:
         if not p.frames:
             return
         h, w = p.frames[0].shape[:2]
-        writer = cv2.VideoWriter(str(p.path), cv2.VideoWriter_fourcc(*"mp4v"), self.fps, (w, h))
+        writer, path = open_video_writer(p.path, self.fps, (w, h))
         for f in p.frames:
             writer.write(f)
         writer.release()
-        self.store.set_media(p.event_id, clip=str(p.path))
-        log.info("Clip guardado: %s", p.path)
+        self.store.set_media(p.event_id, clip=str(path))
+        log.info("Clip guardado: %s", path)
 
 
 def save_snapshot(store: EventStore, frame: np.ndarray, ev: Event) -> str:

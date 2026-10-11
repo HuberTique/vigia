@@ -107,7 +107,19 @@ def cmd_api(args) -> int:
     from vigia.api import create_app
 
     cfg = load_config(args.config)
-    uvicorn.run(create_app(cfg.data_dir), host=args.host, port=args.port)
+    notifiers = []
+    if cfg.telegram.enabled:
+        from vigia.notify.telegram import TelegramNotifier
+
+        notifiers.append(TelegramNotifier(cfg.telegram))
+    app = create_app(cfg.data_dir, config_path=args.config, notifiers=notifiers, preload_model=True)
+    url = f"http://localhost:{args.port}"
+    print(f"\n  Vigia está listo en {url}\n  Deja esta ventana abierta; Ctrl+C para apagar.\n")
+    if getattr(args, "open_browser", False):
+        import webbrowser
+
+        threading.Timer(1.5, webbrowser.open, args=(url,)).start()
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
 
 
@@ -130,11 +142,15 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("-o", "--output", default="snapshot.jpg")
     s.set_defaults(func=cmd_snapshot)
 
-    a = sub.add_parser("api", help="Servir la API y la bandeja de alertas")
-    a.add_argument("-c", "--config", default="configs/demo.yaml")
-    a.add_argument("--host", default="0.0.0.0")
-    a.add_argument("--port", type=int, default=8000)
-    a.set_defaults(func=cmd_api)
+    for name, help_text, open_default in (
+        ("ui", "Abrir la interfaz gráfica en el navegador", True),
+        ("api", "Servir la interfaz y la API sin abrir el navegador", False),
+    ):
+        a = sub.add_parser(name, help=help_text)
+        a.add_argument("-c", "--config", default="configs/demo.yaml")
+        a.add_argument("--host", default="127.0.0.1", help="0.0.0.0 para abrirla desde otros equipos de la red")
+        a.add_argument("--port", type=int, default=8000)
+        a.set_defaults(func=cmd_api, open_browser=open_default)
 
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
