@@ -79,24 +79,67 @@ def test_loitering_ignores_other_classes():
 # --- intrusión -------------------------------------------------------------
 
 
-def test_door_intrusion_only_inside_schedule():
-    door = Zone("puerta", "door", SQUARE, schedules=[Schedule.parse("22:00-06:00")])
-    frames = [[person(7, 500, 600)]] * 10
+DOOR = [(0.0, 0.0), (0.15, 0.0), (0.15, 0.6), (0.0, 0.6)]
+
+
+def walk(tid, start, end, frames):
+    """Persona que camina en línea recta (coordenadas de los pies, en píxeles)."""
+    (x0, y0), (x1, y1) = start, end
+    return [[person(tid, x0 + (x1 - x0) * i / (frames - 1), y0 + (y1 - y0) * i / (frames - 1))] for i in range(frames)]
+
+
+def test_entering_through_door_alerts():
+    door = Zone("puerta", "door", DOOR)
+    # Aparece en la puerta y camina hacia el centro del cuarto.
+    events = run(IntrusionRule([door]), walk(7, (80, 500), (500, 800), 20))
+    assert len(events) == 1
+    assert "entró por puerta" in events[0].message
+
+
+def test_passing_in_front_of_door_does_not_alert():
+    door = Zone("puerta", "door", DOOR)
+    # Viene desde el centro, pasa por la zona de la puerta y sigue de largo.
+    frames = walk(4, (600, 800), (80, 500), 15) + walk(4, (80, 500), (80, 900), 15)
+    assert run(IntrusionRule([door]), frames) == []
+
+
+def test_exiting_through_door_does_not_alert():
+    door = Zone("puerta", "door", DOOR)
+    frames = walk(4, (600, 800), (60, 400), 20) + [[]] * 10  # entra a la puerta y desaparece
+    assert run(IntrusionRule([door]), frames) == []
+
+
+def test_door_entry_only_inside_schedule():
+    door = Zone("puerta", "door", DOOR, schedules=[Schedule.parse("22:00-06:00")])
+    frames = walk(7, (80, 500), (500, 800), 20)
     assert len(run(IntrusionRule([door]), frames, start=NIGHT)) == 1
     assert run(IntrusionRule([door]), frames, start=DAY) == []
 
 
-def test_window_intrusion_uses_body_center():
-    # Ventana alta: los pies quedan por debajo de la ventana pero el cuerpo está dentro.
+def test_door_entry_requires_real_travel():
+    door = Zone("puerta", "door", DOOR)
+    # Sale apenas del borde de la puerta y se queda ahí (ej. alguien parado en el marco).
+    frames = walk(7, (100, 500), (170, 500), 5) + [[person(7, 170, 500)]] * 20
+    assert run(IntrusionRule([door], min_travel=0.1), frames) == []
+
+
+def test_window_entry_uses_body_center():
+    # Ventana alta: el cuerpo aparece en la ventana y luego la persona baja al piso.
     window = Zone("ventana", "window", [(0.4, 0.1), (0.6, 0.1), (0.6, 0.4), (0.4, 0.4)])
-    climbing = TrackedObject(3, "person", 0.9, 450, 200, 550, 500)  # centro y=350 dentro, pies y=500 fuera
-    events = run(IntrusionRule([window]), [[climbing]] * 10, start=DAY)
+    climbing = [[TrackedObject(3, "person", 0.9, 450, 200, 550, 500)]] * 3  # centro y=350 dentro
+    on_floor = [[person(3, 500, 600 + i * 20)] for i in range(10)]
+    events = run(IntrusionRule([window]), climbing + on_floor, start=DAY)
     assert len(events) == 1
     assert events[0].severity == "high"
     assert "ventana" in events[0].message
 
 
-def test_intrusion_requires_confirmation():
+def test_restricted_zone_alerts_on_presence():
+    zone = Zone("bodega", "restricted", SQUARE)
+    assert len(run(IntrusionRule([zone]), [[person(1, 500, 600)]] * 10)) == 1
+
+
+def test_restricted_zone_requires_confirmation():
     zone = Zone("bodega", "restricted", SQUARE)
     one_frame = [[person(1, 500, 600)]] + [[]] * 10
     assert run(IntrusionRule([zone], confirm_seconds=1.0), one_frame) == []
@@ -131,3 +174,11 @@ def test_carried_bag_does_not_alert():
     rule = AbandonedObjectRule(static_seconds=5, unattended_seconds=1)
     frames = [[bag(10, 100 + i * 15, 700)] for i in range(50)]  # se mueve
     assert run(rule, frames) == []
+
+
+def test_walking_in_front_of_window_does_not_alert():
+    # La persona aparece por un pasillo detrás de la ventana: el cuerpo se ve
+    # dentro del marco, pero los pies están en el piso, lejos del alféizar.
+    window = Zone("ventana", "window", [(0.4, 0.1), (0.6, 0.1), (0.6, 0.4), (0.4, 0.4)])
+    frames = [[TrackedObject(5, "person", 0.9, 470, 100, 530, 600)]] * 3 + walk(5, (500, 600), (500, 900), 10)
+    assert run(IntrusionRule([window]), frames, start=DAY) == []

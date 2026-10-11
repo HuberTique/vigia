@@ -7,7 +7,7 @@ Software que se conecta a cámaras CCTV (cámaras IP, DVR y NVR por RTSP) y dete
 | Escenario | Estado | Cómo funciona |
 |---|---|---|
 | Merodeo | ✅ | Una persona permanece más de N segundos en una zona vigilada. |
-| Intrusión por puerta, ventana o zona restringida | ✅ | Una persona entra a la zona; las puertas pueden vigilar sólo en un horario (ej. 22:00-06:00) y las ventanas alertan siempre. |
+| Intrusión por puerta, ventana o zona restringida | ✅ | Puertas y ventanas: alerta sólo si alguien **entra** por ellas (aparece en el marco y avanza hacia el interior); pasar por delante o salir no alerta. Zonas restringidas: alerta por presencia. Todas admiten horario (ej. 22:00-06:00). |
 | Objeto abandonado | ✅ | Una mochila, bolso o maleta queda quieta y sin nadie cerca. |
 | Escaleras humanas / escalamiento | 🔜 | Pose (esqueletos). |
 | Peleas | 🔜 | Pose + clasificador de acciones. |
@@ -51,7 +51,13 @@ Los pesos del modelo (`yolo26n.pt`) se descargan solos la primera vez.
 vigia run -c configs/ejemplo_video.yaml --start-time 23:00 --save-video demo_out.mp4
 ```
 
-Detecta a las personas, las sigue con un ID y genera una alerta de intrusión cuando alguien entra por la puerta de la izquierda "a las 23:00". Para usar tu propio video, cambia `source` por su ruta.
+Detecta a las personas y las sigue con un ID. En este video la gente sale por la puerta, así que no debe haber alertas de intrusión. Para ver entradas, invierte el video (las salidas se vuelven entradas) y analízalo:
+
+```bash
+ffmpeg -i videos/people-detection.mp4 -vf reverse -an videos/people-detection-reverso.mp4
+```
+
+Cambia `source` a ese archivo y deberían salir dos alertas de "entró por puerta". Para usar tu propio video, cambia `source` por su ruta.
 
 `--start-time` simula la hora de grabación para probar reglas con horario. `demo_out.mp4` queda con las cajas, IDs y zonas dibujadas.
 

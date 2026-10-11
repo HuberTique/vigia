@@ -10,7 +10,7 @@ cameras:
     zones:
       - {name: piso, kind: loitering, polygon: [[0.05,0.45],[0.95,0.45],[0.95,0.98],[0.05,0.98]]}
       - {name: puerta, kind: door, polygon: [[0.0,0.0],[0.13,0.0],[0.13,0.6],[0.0,0.6]], schedules: ["22:00-06:00"]}
-      - {name: ventana_derecha, kind: window, polygon: [[0.82,0.03],[0.94,0.03],[0.94,0.42],[0.82,0.42]]}
+      - {name: ventana_derecha, kind: window, polygon: [[0.83,0.04],[0.93,0.04],[0.93,0.38],[0.83,0.38]]}
     rules:
       loitering: {zones: [piso], dwell_seconds: 8}
       intrusion: {zones: [puerta, ventana_derecha]}
