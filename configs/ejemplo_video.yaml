@@ -1,0 +1,17 @@
+# Ejemplo con un video público (Intel IoT sample videos, CC BY 4.0).
+# Descárgalo con ./tools/download_samples.sh y ejecuta:
+#   vigia run -c configs/ejemplo_video.yaml --start-time 23:00 --save-video demo_out.mp4
+model: {backend: ultralytics, weights: yolo26n.pt, confidence: 0.35}
+analysis_fps: 5
+data_dir: data
+cameras:
+  - id: sala
+    source: videos/people-detection.mp4
+    zones:
+      - {name: piso, kind: loitering, polygon: [[0.05,0.45],[0.95,0.45],[0.95,0.98],[0.05,0.98]]}
+      - {name: puerta, kind: door, polygon: [[0.0,0.0],[0.13,0.0],[0.13,0.6],[0.0,0.6]], schedules: ["22:00-06:00"]}
+      - {name: ventana_derecha, kind: window, polygon: [[0.82,0.03],[0.94,0.03],[0.94,0.42],[0.82,0.42]]}
+    rules:
+      loitering: {zones: [piso], dwell_seconds: 8}
+      intrusion: {zones: [puerta, ventana_derecha]}
+      abandoned_object: {static_seconds: 10, unattended_seconds: 5}

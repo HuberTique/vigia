@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vigia"
+version = "0.1.0"
+description = "Detección de comportamientos de riesgo en cámaras CCTV (merodeo, intrusión, objetos abandonados)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "opencv-python-headless>=4.9",
+    "numpy>=1.26",
+    "supervision>=0.26",
+    "trackers>=2.6",
+    "pyyaml>=6",
+    "requests>=2.31",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+]
+
+[project.optional-dependencies]
+# Elige un backend de detección (o ambos).
+yolo = ["ultralytics>=8.4"]  # YOLO26 / YOLO11, licencia AGPL-3.0
+rfdetr = ["rfdetr>=1.9"]  # RF-DETR, Apache 2.0 (tamaños nano a large)
+dev = ["pytest>=8", "httpx>=0.27", "ruff>=0.6"]
+
+[project.scripts]
+vigia = "vigia.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["vigia*"]
+
+[tool.ruff]
+line-length = 140
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

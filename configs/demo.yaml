@@ -1,0 +1,51 @@
+# Configuración de ejemplo. Las coordenadas de las zonas son normalizadas
+# (0 a 1): x de izquierda a derecha, y de arriba a abajo. Usa
+# `vigia snapshot --camera cam1` para obtener un cuadro con cuadrícula.
+
+model:
+  backend: ultralytics   # ultralytics (YOLO26/YOLO11) | rfdetr
+  weights: yolo26n.pt    # con rfdetr: nano | small | medium | large | ruta a checkpoint
+  confidence: 0.35
+  imgsz: 640
+  classes: [person, backpack, handbag, suitcase]
+
+analysis_fps: 5          # cuadros analizados por segundo y cámara
+data_dir: data           # base de datos, fotos y clips
+
+clips:
+  pre_seconds: 5
+  post_seconds: 5
+
+notify:
+  telegram:
+    enabled: false       # exporta TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID y pon true
+
+cameras:
+  # Cámara simulada: tools/simulate_cameras.sh publica videos como RTSP.
+  # También sirve un archivo local (source: videos/entrada.mp4) o una webcam (source: "0").
+  - id: cam1
+    name: Frente del local
+    source: rtsp://localhost:8554/cam1
+    zones:
+      - name: anden
+        kind: loitering
+        polygon: [[0.05, 0.55], [0.95, 0.55], [0.95, 0.98], [0.05, 0.98]]
+      - name: puerta_principal
+        kind: door
+        polygon: [[0.40, 0.30], [0.60, 0.30], [0.60, 0.95], [0.40, 0.95]]
+        schedules: ["22:00-06:00"]   # sólo alerta de noche
+      - name: ventana_lateral
+        kind: window
+        polygon: [[0.75, 0.20], [0.95, 0.20], [0.95, 0.50], [0.75, 0.50]]
+    rules:
+      loitering:
+        zones: [anden]
+        dwell_seconds: 45
+        grace_seconds: 3
+      intrusion:
+        zones: [puerta_principal, ventana_lateral]
+        confirm_seconds: 1.0
+      abandoned_object:
+        static_seconds: 20
+        unattended_seconds: 15
+        owner_radius: 4
